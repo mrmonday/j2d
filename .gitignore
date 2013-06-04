@@ -1,0 +1,20 @@
+# Eclipse
+.metadata
+.classpath
+.project
+.settings
+
+# Java
+*.class
+*.jar
+
+# Tmp files
+.*.swp
+.*.swo
+*~
+
+# Archives
+*.tgz
+*.tar.gz
+*.tar.bz2
+*.tar.xz
