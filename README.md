@@ -22,6 +22,7 @@ j2d requires the following to build:
     - org.eclipse.osgi
     - org.eclipse.core.contenttype
     - org.eclipse.equinox.preferences
+
    You can probably find these in Eclipses plugin directory.
 
 You can use the following to run:
