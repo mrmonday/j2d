@@ -296,6 +296,8 @@ public class J2dVisitor extends ASTVisitor {
 			return str + "_";
 		} else if (Arrays.binarySearch(jClasses, str) >= 0) {
 			return "Java" + str;
+		} else if (str.equals("toString")) {
+			return "toJString";
 		}
 		return str;
 	}
@@ -1987,7 +1989,18 @@ public class J2dVisitor extends ASTVisitor {
 		if (node instanceof TypeDeclaration && node.getParent() instanceof CompilationUnit) {
 			println("");
 			println("// Implicit imports");
+
+			// java.lang.* is implicitly imported in java
 			println("import java.lang.all;");
+
+			// Current package is implicitly imported in java
+			if (packageName.length() != 0) {
+				println("import " + packageName + ".all;");
+			} else {
+				// TODO implicit imports in default package
+			}
+
+			// Certain things generated need some code support
 			println("import j2d.core;");
 			println("");
 		}
