@@ -274,7 +274,6 @@ public class J2dVisitor extends ASTVisitor {
 		shouldIndent = true;
 	}
 	
-	// TODO should handle all keywords
 	public static String fixKeywords(String str) {
 		// All D keywords which aren't also java keywords
 		final String[] keywords = {
