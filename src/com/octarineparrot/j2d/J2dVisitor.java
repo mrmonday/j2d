@@ -276,15 +276,20 @@ public class J2dVisitor extends ASTVisitor {
 	
 	// TODO should handle all keywords
 	public static String fixKeywords(String str) {
-		if (str.equals("out")      || str.equals("in")    ||
-			str.equals("ref")      || str.equals("debug") ||
-			str.equals("delete")   || str.equals("body")  ||
-			str.equals("is")       || str.equals("union") ||
-			str.equals("version")  || str.equals("scope") ||
-			str.equals("override") || str.equals("cast")  ||
-			str.equals("delegate") || str.endsWith("shared") ||
-			str.equals("alias")    || str.equals("bool") ||
-			str.equals("with")) {
+		// All D keywords which aren't also java keywords
+		final String[] keywords = {
+				"alias", "align", "asm", "auto", "body", "bool",
+				"cast", "cdouble", "cent", "cfloat", "creal",
+				"dchar", "debug", "delegate", "delete", "deprecated",
+				"export", "extern", "foreach", "foreach_reverse", "function",
+				"idouble", "ifloat", "immutable", "in", "inout", "invariant",
+				"ireal", "is", "lazy", "macro", "mixin", "module", "nothrow",
+				"out", "override", "pragma", "pure", "real", "ref", "scope",
+				"shared", "struct", "template", "typedef", "typeid", "typeof",
+				"ubyte", "ucent", "uint", "ulong", "union", "unittest",
+				"ushort", "version", "wchar", "with"
+		};
+		if (Arrays.binarySearch(keywords, str) >= 0) {
 			return str + "_";
 		} else if (str.equals("Object")) {
 			return "JavaObject";
