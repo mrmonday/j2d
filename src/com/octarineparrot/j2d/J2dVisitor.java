@@ -830,9 +830,11 @@ public class J2dVisitor extends ASTVisitor {
 				println(";");
 				// Aliases for fields
 				for (IVariableBinding ivb : itb.getDeclaredFields()) {
-					if ((ivb.getModifiers() & Modifier.STATIC) != 0) {
+					if ((ivb.getModifiers() & Modifier.STATIC) != 0 &&
+						(ivb.getModifiers() & Modifier.PUBLIC) != 0) {
+						// TODO Do we need to do something with these? Why are they here?
 						// Skip this, comes from enum types.
-						if (ivb.getName().equals("$VALUES")) {
+						if (ivb.getName().equals("$VALUES") || ivb.getName().equals("$assertionsDisabled")) {
 							continue;
 						}
 						print("alias ");
@@ -904,7 +906,20 @@ public class J2dVisitor extends ASTVisitor {
 	public boolean visit(InfixExpression node) {
 		//System.out.println("Found: " + node.getClass() + " " + node);
 
+		boolean needParens = false;
+		if (node.getOperator().equals(Operator.AND) ||
+			node.getOperator().equals(Operator.XOR) ||
+			node.getOperator().equals(Operator.OR)) {
+			needParens = true;
+		}
+
+		if (needParens) {
+			print("(");
+		}
 		node.getLeftOperand().accept(this);
+		if (needParens) {
+			print(")");
+		}
 		
 		// TODO == for non-primitive operands should become is
 		String op = " " + node.getOperator() + " ";
@@ -920,12 +935,24 @@ public class J2dVisitor extends ASTVisitor {
 		
 		print(op);
 
+		if (needParens) {
+			print("(");
+		}
 		node.getRightOperand().accept(this);
-
+		if (needParens) {
+			print(")");
+		}
+		
 		if (node.hasExtendedOperands()) {
 			for (Object o : node.extendedOperands()) {
 				print(op);
+				if (needParens) {
+					print("(");
+				}
 				((Expression)o).accept(this);
+				if (needParens) {
+					print(")");
+				}
 			}
 		}
 		return false;
@@ -1114,7 +1141,7 @@ public class J2dVisitor extends ASTVisitor {
 					if (printed > 0) {
 						print(", ");
 					}
-					print(((SingleVariableDeclaration)o).getName().toString());
+					print(fixKeywords(((SingleVariableDeclaration)o).getName().toString()));
 					printed++;
 				}
 				println(");");
@@ -1483,9 +1510,11 @@ public class J2dVisitor extends ASTVisitor {
 		//System.out.println("Found: " + node.getClass());
 		// TODO Type arguments
 		if (node.getQualifier() != null) {
-			// TODO Check this is valid D :<
-			node.getQualifier().accept(this);
-			print(".");
+			//node.getQualifier().accept(this);
+			//print(".");
+			// TODO This probably isn't always correct.
+			print("super.outer");
+			return false;
 		}
 		print("super.");
 		node.getName().accept(this);
