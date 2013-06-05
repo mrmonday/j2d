@@ -288,12 +288,13 @@ public class J2dVisitor extends ASTVisitor {
 				"ubyte", "ucent", "uint", "ulong", "union", "unittest",
 				"ushort", "version", "wchar", "with"
 		};
+		final String[] jClasses = {
+				"Error", "Exception", "Object", "Throwable", "TypeInfo"
+		};
 		if (Arrays.binarySearch(keywords, str) >= 0) {
 			return str + "_";
-		} else if (str.equals("Object")) {
-			return "JavaObject";
-		} else if (str.equals("TypeInfo")) {
-			return "JavaTypeInfo";
+		} else if (Arrays.binarySearch(jClasses, str) >= 0) {
+			return "Java" + str;
 		}
 		return str;
 	}
@@ -862,11 +863,31 @@ public class J2dVisitor extends ASTVisitor {
 			} else {
 				// import static foo.bar;
 				if (ib instanceof ITypeBinding) {
-					node.getName().accept(this);
+					ITypeBinding itb = (ITypeBinding)ib;
+					// TODO This is a bit of a hack.
+					String s = itb.getBinaryName();
+					int idx = s.indexOf('$');
+					if (idx != -1) {
+						print(cleanComponents(s.substring(0, idx)));
+					} else {
+						node.getName().accept(this);
+					}
+
+				} else if (ib instanceof IMethodBinding) {
+					// apparently import static package.Outer.Inner.foobar; is a thing
+					IMethodBinding imb = (IMethodBinding)ib;
+					// TODO This is a bit of a hack.
+					String s = imb.getDeclaringClass().getBinaryName();
+					int idx = s.indexOf('$');
+					if (idx != -1) {
+						print(cleanComponents(s.substring(0, idx)));
+					} else {
+						((QualifiedName)node.getName()).getQualifier().accept(this);
+					}
 				} else {
 					((QualifiedName)node.getName()).getQualifier().accept(this);
 				}
-
+				
 				println(";");
 				print("alias ");
 				node.getName().accept(this);
@@ -879,7 +900,22 @@ public class J2dVisitor extends ASTVisitor {
 			if (node.isOnDemand()) {
 				// TODO Change after DIP 37
 				node.getName().accept(this);
-				println(".all;");
+				if (ib instanceof ITypeBinding) {
+					ITypeBinding itb = (ITypeBinding)ib;
+					// TODO This is a bit of a hack.
+					String s = itb.getBinaryName();
+					int idx = s.indexOf('$');
+					if (idx != -1) {
+						print(cleanComponents(s.substring(0, idx)));
+						print(" : ");
+						print(cleanComponents(s.substring(idx + 1, s.length()).replace("$", ".")));
+						println(";");
+					} else {
+						println(";");
+					}
+				} else {
+					println(".all;");
+				}
 			} else {
 				// import foo.inner;
 				if (ib instanceof ITypeBinding) {
