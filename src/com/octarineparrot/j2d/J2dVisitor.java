@@ -226,7 +226,12 @@ public class J2dVisitor extends ASTVisitor {
 		String pkg = pkgs.length > 0 ? pkgs[0] : packageName;
 		
 		outFile = Paths.get(outputDir, pkg).resolve("native_methods.d");
-		
+		// TODO What if we're overwriting from a previous translation?
+		if (!outFile.toFile().exists()) {
+			Files.write(outFile,
+					("module " + pkg + "native_methods;").getBytes(),
+					StandardOpenOption.CREATE);
+		}
 		nativeOutput.flush();
 		Files.write(outFile,
 					nativeOutput.toString().getBytes(),
@@ -1190,6 +1195,9 @@ public class J2dVisitor extends ASTVisitor {
 				println("}");
 				// TODO This doesn't work with type parameters
 				pushWriter(nativeOutput);
+				int oldIndent = indent;
+				indent = 0;
+				println("");
 				if (!isStatic(node)) {
 					println("import " + cn + ";");
 				}
@@ -1212,6 +1220,7 @@ public class J2dVisitor extends ASTVisitor {
 				println("assert(false, \"Unimplemented native method: " + fqn + "\");");
 				indent--;
 				println("}");
+				indent = oldIndent;
 				popWriter();
 			} else {
 				node.getBody().accept(this);
@@ -1713,11 +1722,20 @@ public class J2dVisitor extends ASTVisitor {
 		Collections.sort(al, new Comparator<Object>(){
 			@Override
 			public int compare(Object o1, Object o2) {
-				if (o1 instanceof Modifier && o2 instanceof Modifier) {
-					if (o1.toString().equals("transient") ||
-						o1.toString().equals("strictfp")  ||
-						o1.toString().equals("volatile")) {
-						return -1;
+				for (Object o : new Object[] { o1, o2 }) {
+					if (o instanceof Modifier) {
+						if (o.toString().equals("transient") ||
+							o.toString().equals("strictfp")  ||
+							o.toString().equals("volatile")) {
+							return o == o1 ? -1 : 1;
+						}
+					} else if (o instanceof MarkerAnnotation) {
+						MarkerAnnotation ma = (MarkerAnnotation)o;
+						String name = ma.getTypeName().getFullyQualifiedName();
+						if (name.equals("Override") ||
+							name.equals("Deprecated")) {
+							return o == o1 ? 1 : -1;
+						}
 					}
 				}
 				return 0;

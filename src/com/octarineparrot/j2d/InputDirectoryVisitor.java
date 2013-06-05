@@ -161,7 +161,8 @@ public final class InputDirectoryVisitor extends
 		}
 		relativeDir = Paths.get(join(parts, FileSystems.getDefault().getSeparator()));
 		String packageName = relativeDir.toString().replace(FileSystems.getDefault().getSeparator(), ".");
-		Writer w = new FileWriter(Paths.get(args[1], relativeDir.toString()).resolve("all.d").toFile());
+		Path p = Paths.get(args[1], relativeDir.toString());
+		Writer w = new FileWriter(p.resolve("all.d").toFile());
 		w.write("module " + packageName + ".all;\n\n");
 		
 		for (String s : files.pop()) {
