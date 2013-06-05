@@ -1325,6 +1325,10 @@ public class J2dVisitor extends ASTVisitor {
 		if (number.endsWith("D") || number.endsWith("d")) {
 			number = number.substring(0, number.length() - 1);
 		}
+		// 10l -> 10L
+		if (number.endsWith("l")) {
+			number = number.substring(0, number.length() - 1) + "L";
+		}
 		print(number);
 		return false;
 	}
@@ -1986,12 +1990,16 @@ public class J2dVisitor extends ASTVisitor {
 	
 	private void doComments(ASTNode node, boolean post) {
 		Comment c = comments.peek();
-		if (c != null && c.getStartPosition() > endOfLastNode) {
+
+		while (c != null && c.getStartPosition() > endOfLastNode) {
 			int startOfNextNode = post ? siblingOrParentPosition(node) 
 					 				   : node.getStartPosition();
 
 			if (c.getStartPosition() + c.getLength() < startOfNextNode) {
 				comments.remove().accept(this);
+				c = comments.peek();
+			} else {
+				break;
 			}
 		}
 		endOfLastNode = node.getStartPosition() + node.getLength();
