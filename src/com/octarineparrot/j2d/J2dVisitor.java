@@ -292,6 +292,8 @@ public class J2dVisitor extends ASTVisitor {
 			return str + "_";
 		} else if (str.equals("Object")) {
 			return "JavaObject";
+		} else if (str.equals("TypeInfo")) {
+			return "JavaTypeInfo";
 		}
 		return str;
 	}
