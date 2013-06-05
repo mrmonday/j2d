@@ -1337,29 +1337,6 @@ public class J2dVisitor extends ASTVisitor {
 		return false;
 	}
 	
-	private Type getType(AST ast, ITypeBinding tb) {
-		if (tb.isPrimitive()) {
-			Code c = PrimitiveType.toCode(tb.getName());
-			return ast.newPrimitiveType(c);
-		} else if (tb.isArray()) {
-			Type elType = getType(ast, tb.getElementType());
-			return ast.newArrayType(elType, tb.getDimensions());
-		} else if (tb.isParameterizedType()) {
-			Type e = getType(ast, tb.getErasure());
-			ParameterizedType t = ast.newParameterizedType(e);
-
-			for (ITypeBinding itb : tb.getTypeArguments()) {
-				t.typeArguments().add(getType(ast, itb));
-			}
-
-			return t;
-		} else if (tb.isWildcardType()) {
-			return ast.newWildcardType();
-		}
-
-		return ast.newSimpleType(ast.newName(tb.getName()));
-	}
-
 	@Override
 	public boolean visit(ParameterizedType node) {
 		//System.out.println("Found: " + node.getClass());
