@@ -1446,7 +1446,12 @@ public class J2dVisitor extends ASTVisitor {
 	@Override
 	public boolean visit(SimpleType node) {
 		//System.out.println("Found: " + node.getClass() + " " + node);
-		print(fixKeywords(node.toString()));
+		node.getName().accept(this);
+		if (node.getName() instanceof QualifiedName) {
+			QualifiedName qn = (QualifiedName)node.getName();
+			print(".");
+			qn.getName().accept(this);
+		}
 		return false;
 	}
 
