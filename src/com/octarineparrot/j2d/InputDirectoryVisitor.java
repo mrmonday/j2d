@@ -69,7 +69,7 @@ public final class InputDirectoryVisitor extends
 	private String getModName(Path file) {
 		Path fn = file.getName(file.getNameCount() - 1);
 		String mn = fn.toString();
-		return mn.substring(0, mn.length() - 5);
+		return J2dVisitor.fixKeywords(mn.substring(0, mn.length() - 5));
 	}
 
 	@Override

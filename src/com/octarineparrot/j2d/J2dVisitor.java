@@ -205,7 +205,8 @@ public class J2dVisitor extends ASTVisitor {
 		sourceCode = source;
 		
 		String fileName = file.toFile().getName();
-		moduleName = fileName.substring(0, fileName.length() - 5);
+		String module = fileName.substring(0, fileName.length() - 5);
+		moduleName = fixKeywords(module);
 		
 		pushWriter(new StringWriter());
 	}
@@ -1800,7 +1801,8 @@ public class J2dVisitor extends ASTVisitor {
 			print(")");
 		}
 		
-		if (!node.isInterface() || node.superInterfaceTypes().size() != 0) {
+		if ((!node.isInterface() || node.superInterfaceTypes().size() != 0) &&
+				!node.getName().toString().equals("Object")) {
 			print(" : ");
 		}
 		
@@ -1812,7 +1814,7 @@ public class J2dVisitor extends ASTVisitor {
 				//print(node.getSuperclassType().toString());
 			}
 		} else {
-			if (!node.isInterface()) {
+			if (!node.isInterface() && !node.getName().toString().equals("Object")) {
 				print("JavaObject");
 			}
 		}
@@ -2001,8 +2003,10 @@ public class J2dVisitor extends ASTVisitor {
 		}
 		
 		if (node instanceof TypeDeclaration && node.getParent() instanceof CompilationUnit) {
-			println("// Implicit import");
+			println("");
+			println("// Implicit imports");
 			println("import java.lang.all;");
+			println("import j2d.core;");
 			println("");
 		}
 		
