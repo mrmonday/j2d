@@ -523,7 +523,9 @@ public class J2dVisitor extends ASTVisitor {
 		//System.out.println("Found: " + node.getClass() + " " + node)
 
 		// Wrap the expression in parenthesis so it parses in D
-		if (node.getParent() instanceof MethodInvocation) {
+		boolean needsParens = node.getParent() instanceof MethodInvocation ||
+							  node.getParent() instanceof FieldAccess;
+		if (needsParens) {
 			print("(");
 		}
 		print("new ");
@@ -546,7 +548,7 @@ public class J2dVisitor extends ASTVisitor {
 		} else {
 			node.getAnonymousClassDeclaration().accept(this);
 		}
-		if (node.getParent() instanceof MethodInvocation) {
+		if (needsParens) {
 			print(")");
 		}
 		return false;
@@ -1191,8 +1193,6 @@ public class J2dVisitor extends ASTVisitor {
 					printed++;
 				}
 				println(");");
-				indent--;
-				println("}");
 				// TODO This doesn't work with type parameters
 				pushWriter(nativeOutput);
 				int oldIndent = indent;
@@ -1231,7 +1231,7 @@ public class J2dVisitor extends ASTVisitor {
 	
 	@Override
 	public void endVisit(MethodDeclaration node) {
-		if (node.getBody() != null && !isNative(node)) {
+		if (node.getBody() != null || isNative(node)) {
 			if (isSynchronized(node)) {
 				indent--;
 				println("}");
