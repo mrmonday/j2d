@@ -935,6 +935,8 @@ public class J2dVisitor extends ASTVisitor {
 					int idx = s.indexOf('$');
 					if (idx != -1) {
 						print(cleanComponents(s.substring(0, idx)));
+						print(".");
+						print(fixKeywords(s.substring(s.lastIndexOf('.'), s.length())));
 						print(" : ");
 						print(cleanComponents(s.substring(idx + 1, s.length()).replace("$", ".")));
 						println(";");

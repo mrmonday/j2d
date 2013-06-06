@@ -27,3 +27,4 @@
 module j2d.core;
 
 enum _j2d_transient;
+enum _j2d_volatile;
