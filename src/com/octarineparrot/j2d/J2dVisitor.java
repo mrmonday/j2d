@@ -45,7 +45,6 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.Stack;
 
-import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.AnnotationTypeDeclaration;
@@ -111,7 +110,6 @@ import org.eclipse.jdt.core.dom.ParenthesizedExpression;
 import org.eclipse.jdt.core.dom.PostfixExpression;
 import org.eclipse.jdt.core.dom.PrefixExpression;
 import org.eclipse.jdt.core.dom.PrimitiveType;
-import org.eclipse.jdt.core.dom.PrimitiveType.Code;
 import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.QualifiedType;
 import org.eclipse.jdt.core.dom.ReturnStatement;
@@ -198,7 +196,31 @@ public class J2dVisitor extends ASTVisitor {
 	 * Module name for output
 	 */
 	final private String moduleName;
-
+	
+	/**
+	 * Identifiers to rewrite
+	 */
+	private List<String> rewrites = new ArrayList<String>();
+	
+	/**
+	 * Should a rewrite be performed?
+	 */
+	private boolean doRewrite = true;
+	
+	/**
+	 * In a field access
+	 */
+	private boolean inFieldAccess = false;
+	
+	/**
+	 * Locally declared variables
+	 */
+	private List<String> locals = new ArrayList<String>();
+	
+	/**
+	 * Are we currently in a method?
+	 */
+	private boolean inMethod = false;
 
 	public J2dVisitor(Path file, char[] source) {
 		nativeOutput = new StringWriter();
@@ -308,6 +330,7 @@ public class J2dVisitor extends ASTVisitor {
 	}
 	
 	int id = 0;
+
 	private String genId() {
 		return "_j2d_" + id++;
 	}
@@ -722,7 +745,9 @@ public class J2dVisitor extends ASTVisitor {
 		//System.out.println("Found: " + node.getClass());
 		node.getExpression().accept(this);
 		print(".");
+		inFieldAccess = true;
 		node.getName().accept(this);
+		inFieldAccess = false;
 		return false;
 	}
 
@@ -730,7 +755,9 @@ public class J2dVisitor extends ASTVisitor {
 	public boolean visit(FieldDeclaration node) {
 		//System.out.println("Found: " + node.getClass());
 		printModifiers(node);
+		doRewrite = false;
 		node.getType().accept(this);
+		doRewrite = true;
 		int printed = 0;
 		if (node.fragments().size() > 0) {
 			for (Object o : node.fragments()) {
@@ -1105,14 +1132,16 @@ public class J2dVisitor extends ASTVisitor {
 	@Override
 	public boolean visit(MethodDeclaration node) {
 		//System.out.println("Found: " + node.getClass());
-
+		
 		printModifiers(node);
 		if (node.isConstructor()) {
 			print("this(");
 		} else {
 			node.getReturnType2().accept(this);
 			print(" ");
+			doRewrite = false;
 			node.getName().accept(this);
+			doRewrite = true;
 			print("(");
 		}
 
@@ -1225,6 +1254,7 @@ public class J2dVisitor extends ASTVisitor {
 				indent = oldIndent;
 				popWriter();
 			} else {
+				inMethod = true;
 				node.getBody().accept(this);
 			}
 		}
@@ -1233,6 +1263,8 @@ public class J2dVisitor extends ASTVisitor {
 	
 	@Override
 	public void endVisit(MethodDeclaration node) {
+		inMethod = false;
+		locals.clear();
 		if (node.getBody() != null || isNative(node)) {
 			if (isSynchronized(node)) {
 				indent--;
@@ -1452,11 +1484,18 @@ public class J2dVisitor extends ASTVisitor {
 		println(";");
 		return false;
 	}
+	
+	private String doRewrites(String s) {
+		if (inFieldAccess || (doRewrite && rewrites.contains(s) && !locals.contains(s))) {
+			return "_" + s;
+		}
+		return s;
+	}
 
 	@Override
 	public boolean visit(SimpleName node) {
 		//System.out.println("Found: " + node.getClass() + " " + node);
-		print(fixKeywords(node.toString()));
+		print(fixKeywords(doRewrites(node.toString())));
 		return super.visit(node);
 	}
 
@@ -1775,6 +1814,33 @@ public class J2dVisitor extends ASTVisitor {
 	private boolean isStatic(BodyDeclaration node) {
 		return (node.getModifiers() & Modifier.STATIC) != 0;
 	}
+	
+	/**
+	 * In Java, it's valid to have a field and method with the same
+	 * name.
+	 * 
+	 * If a method and field have the same name, rewrite the field
+	 * to _fieldName.
+	 * @param node
+	 */
+	private void fixNames(TypeDeclaration node) {
+		List<FieldDeclaration> fds = Arrays.asList(node.getFields());
+		List<MethodDeclaration> mds = Arrays.asList(node.getMethods());
+		List<VariableDeclarationFragment> toRewrite = new ArrayList<>();
+		// TODO Make this O(m log n) rather than O(m x n)
+		for (FieldDeclaration fd : fds) {
+			for (VariableDeclarationFragment vdf : (List<VariableDeclarationFragment>)fd.fragments()) {
+				for (MethodDeclaration md : mds) {
+					if (md.getName().toString().equals(vdf.getName().toString())) {
+						toRewrite.add(vdf);
+					}
+				}
+			}
+		}
+		for (VariableDeclarationFragment f : toRewrite) {
+			rewrites.add(f.getName().toString());
+		}
+	}
 
 	@Override
 	public boolean visit(TypeDeclaration node) {
@@ -1847,6 +1913,9 @@ public class J2dVisitor extends ASTVisitor {
 		}
 		println(" {");
 		indent++;
+		
+		fixNames(node);
+		
 		for(Object o : node.bodyDeclarations()) {
 			((BodyDeclaration)o).accept(this);
 			println("");
@@ -2060,7 +2129,18 @@ public class J2dVisitor extends ASTVisitor {
 	public boolean visit(VariableDeclarationFragment node) {
 		//System.out.println("Found: " + node.getClass());
 		print(" ");
+		Writer w = new StringWriter();
+		pushWriter(w);
+		if (inMethod) {
+			doRewrite = false;
+		}
 		node.getName().accept(this);
+		if (inMethod) {
+			doRewrite = true;
+		}
+		popWriter();
+		locals.add(w.toString());
+		print(w.toString());
 		Expression e = node.getInitializer();
 		if (e != null) {
 			print(" = ");
