@@ -103,7 +103,7 @@ public final class InputDirectoryVisitor extends
 		IProblem[] problems = cu.getProblems();
 		boolean warnings = onlyWarnings(problems);
 		if (problems.length == 0 || warnings) {
-			if (warnings) {
+			if (problems.length > 0 && warnings) {
 				System.err.println("Warning: File '" + file + "' contains warnings, which may lead to an invalid conversion.");
 				for (IProblem problem : problems) {
 					System.err.println(file + ":" +
