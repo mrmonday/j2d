@@ -221,6 +221,11 @@ public class J2dVisitor extends ASTVisitor {
 	 * Are we currently in a method?
 	 */
 	private boolean inMethod = false;
+	
+	/**
+	 * List of types we are currently inside
+	 */
+	private Stack<String> inTypes = new Stack<>();
 
 	public J2dVisitor(Path file, char[] source) {
 		nativeOutput = new StringWriter();
@@ -1501,11 +1506,41 @@ public class J2dVisitor extends ASTVisitor {
 	@Override
 	public boolean visit(SimpleType node) {
 		//System.out.println("Found: " + node.getClass() + " " + node);
+		Writer w = new StringWriter();
+		pushWriter(w);
 		node.getName().accept(this);
+		popWriter();
+
+		String type = node.resolveBinding().getBinaryName();
+
 		if (node.getName() instanceof QualifiedName) {
-			QualifiedName qn = (QualifiedName)node.getName();
-			print(".");
-			qn.getName().accept(this);
+			QualifiedName qn = (QualifiedName) node.getName();
+
+			if (type.indexOf('$') != -1) {
+				String cls = type.substring(0, type.indexOf("$"));
+				if (!inTypes.contains(cls)) {
+					int idx = cls.lastIndexOf('.');
+					if (idx == -1) {
+						print(w.toString());
+						print(".");
+						print(fixKeywords(cls));
+					} else {
+						String className = type.substring(idx + 1, type.indexOf('$'));
+						String fixedClassName = fixKeywords(className);
+						print(w.toString().replace(className + ".", fixedClassName + "." + fixedClassName + "."));
+					}
+				} else {
+					print(w.toString());
+				}
+			} else {
+				print(w.toString());
+				if (!inTypes.contains(type)) {
+					print(".");
+					qn.getName().accept(this);
+				}
+			}
+		} else {
+			print(w.toString());
 		}
 		return false;
 	}
@@ -1844,7 +1879,7 @@ public class J2dVisitor extends ASTVisitor {
 	@Override
 	public boolean visit(TypeDeclaration node) {
 		//System.out.println("Found: " + node.getClass());
-		
+		inTypes.push(node.resolveBinding().getBinaryName());
 		printModifiers(node);
 		
 		if (node.isInterface()) {
@@ -1924,6 +1959,7 @@ public class J2dVisitor extends ASTVisitor {
 
 	@Override
 	public void endVisit(TypeDeclaration node) {
+		inTypes.pop();
 		indent--;
 		println("}");
 	}
