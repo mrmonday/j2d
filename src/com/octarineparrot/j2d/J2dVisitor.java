@@ -200,7 +200,7 @@ public class J2dVisitor extends ASTVisitor {
 	/**
 	 * Identifiers to rewrite
 	 */
-	private List<String> rewrites = new ArrayList<String>();
+	private List<String> varRewrites = new ArrayList<String>();
 	
 	/**
 	 * Should a rewrite be performed?
@@ -1490,7 +1490,7 @@ public class J2dVisitor extends ASTVisitor {
 	}
 	
 	private String doRewrites(String s) {
-		if (inFieldAccess || (doRewrite && rewrites.contains(s) && !locals.contains(s))) {
+		if (inFieldAccess || (doRewrite && varRewrites.contains(s) && !locals.contains(s))) {
 			return "_" + s;
 		}
 		return s;
@@ -1860,19 +1860,15 @@ public class J2dVisitor extends ASTVisitor {
 	private void fixNames(TypeDeclaration node) {
 		List<FieldDeclaration> fds = Arrays.asList(node.getFields());
 		List<MethodDeclaration> mds = Arrays.asList(node.getMethods());
-		List<VariableDeclarationFragment> toRewrite = new ArrayList<>();
 		// TODO Make this O(m log n) rather than O(m x n)
 		for (FieldDeclaration fd : fds) {
 			for (VariableDeclarationFragment vdf : (List<VariableDeclarationFragment>)fd.fragments()) {
 				for (MethodDeclaration md : mds) {
 					if (md.getName().toString().equals(vdf.getName().toString())) {
-						toRewrite.add(vdf);
+						varRewrites.add(vdf.getName().toString());
 					}
 				}
 			}
-		}
-		for (VariableDeclarationFragment f : toRewrite) {
-			rewrites.add(f.getName().toString());
 		}
 	}
 
