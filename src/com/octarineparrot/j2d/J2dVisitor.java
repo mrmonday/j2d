@@ -163,6 +163,7 @@ public class J2dVisitor extends ASTVisitor {
 	
 	/**
 	 * Should the code be indented?
+	 * TODO This needs to be a stack like output
 	 */
 	private boolean shouldIndent = true;
 	
@@ -198,9 +199,22 @@ public class J2dVisitor extends ASTVisitor {
 	final private String moduleName;
 	
 	/**
-	 * Identifiers to rewrite
+	 * Instance variables to rewrite
+	 * Used when:
+	 * 	void foo();
+	 *  int foo;
+	 * Occurs.
 	 */
 	private List<String> varRewrites = new ArrayList<String>();
+	
+	/**
+	 * Methods to rewrite
+	 * Used when:
+	 *  void foo();
+	 *  <T> T foo();
+	 * Occurs
+	 */
+	private List<String> methodRewrites = new ArrayList<String>();
 	
 	/**
 	 * Should a rewrite be performed?
@@ -226,7 +240,23 @@ public class J2dVisitor extends ASTVisitor {
 	 * List of types we are currently inside
 	 */
 	private Stack<String> inTypes = new Stack<>();
+	
+	/**
+	 * Should paramaterised typed be forced to be 
+	 * printed as JavaObject instead of T?
+	 */
+	private boolean forceJavaObject = false;
 
+	/**
+	 * Additional generated method to print (used for generic inheritance)
+	 */
+	private String additionalMethod = "";
+	
+	/**
+	 * Should generic method names be rewritten
+	 */
+	private boolean rewriteMethods = false;
+	
 	public J2dVisitor(Path file, char[] source) {
 		nativeOutput = new StringWriter();
 		sourceCode = source;
@@ -401,7 +431,7 @@ public class J2dVisitor extends ASTVisitor {
 			e.accept(this);
 			printed++;
 		}
-		println("]");
+		print("]");
 		return false;
 	}
 
@@ -1133,9 +1163,63 @@ public class J2dVisitor extends ASTVisitor {
 		return super.visit(node);
 	}
 	
+	/**
+	 * Return all super interfaces and classes of a type
+	 * 
+	 * @param itb
+	 * @return
+	 */
+	private Set<ITypeBinding> getParents(ITypeBinding itb, Set<ITypeBinding> supers) {
+		if (itb.getSuperclass() != null) {
+			supers.add(itb.getSuperclass());
+			getParents(itb.getSuperclass(), supers);
+		}
+		/*for (ITypeBinding i : itb.getInterfaces()) {
+			supers.add(i);
+			getParents(i, supers);
+		}*/
+		return supers;
+	}
+	
+	private boolean typesMatch(IMethodBinding m1, IMethodBinding m2) {
+		if (m1.getReturnType().getErasure().equals(m2.getReturnType().getErasure())) {
+			ITypeBinding[] m1Params = m1.getParameterTypes();
+			ITypeBinding[] m2Params = m2.getParameterTypes();
+			if (m1Params.length != m2Params.length) {
+				return false;
+			}
+			for (int i = 0; i < m1Params.length; i++) {
+				if (!m1Params[i].getErasure().equals(m2Params[i].getErasure())) {
+					return false;
+				}
+			}
+			return true;
+		}
+		return false;
+	}
+	
+	private boolean isOverride(MethodDeclaration node) {
+		Set<ITypeBinding> supers = getParents(node.resolveBinding().getDeclaringClass(), new HashSet<ITypeBinding>());
+		for (ITypeBinding itb : supers) {
+			for (IMethodBinding imb : itb.getDeclaredMethods()) {
+				if (imb.getName().equals(node.getName().toString()) &&
+					typesMatch(imb, node.resolveBinding())) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+	
 	@Override
 	public boolean visit(MethodDeclaration node) {
 		//System.out.println("Found: " + node.getClass());
+		
+		boolean overridden = isOverride(node);
+		//println(node.getName() + ": isOverride = " + overridden);
+		if (overridden && node.typeParameters().size() > 0) {
+			forceJavaObject = true;
+		}
 		
 		printModifiers(node);
 		if (node.isConstructor()) {
@@ -1144,7 +1228,12 @@ public class J2dVisitor extends ASTVisitor {
 			node.getReturnType2().accept(this);
 			print(" ");
 			doRewrite = false;
+			//rewriteMethods = node.typeParameters().size() == 0;
 			node.getName().accept(this);
+			if (forceJavaObject) {
+				print("Impl");
+			}
+			//rewriteMethods = false;
 			doRewrite = true;
 			print("(");
 		}
@@ -1163,7 +1252,7 @@ public class J2dVisitor extends ASTVisitor {
 		}
 		popWriter();
 		
-		if (node.typeParameters().size() > 0 || !additionalTemplateParams.isEmpty()) {
+		if (!overridden && (node.typeParameters().size() > 0 || !additionalTemplateParams.isEmpty() || methodRewrites.contains(node.getName().toString()))) {
 			printed = 0;
 			for (Object o : node.typeParameters()) {
 				if (printed > 0) {
@@ -1186,7 +1275,62 @@ public class J2dVisitor extends ASTVisitor {
 		}
 		print(sw.toString());
 		if (node.getBody() == null && !isNative(node)) {
-			println(");");
+			if (node.typeParameters().size() > 0 || methodRewrites.contains(node.getName().toString())) {
+				Writer w = new StringWriter();
+				pushWriter(w);
+				printModifiers(node);
+				forceJavaObject = true;
+				node.getReturnType2().accept(this);
+				print(" ");
+				doRewrite = false;
+				node.getName().accept(this);
+				print("Impl");
+				doRewrite = true;
+				print("(");
+				printed = 0;
+				for (Object o : node.parameters()) {
+					if (printed > 0) {
+						print(", ");
+					}
+					visit((SingleVariableDeclaration)o);
+					printed++;
+				}
+				println(");");
+				forceJavaObject = false;
+				popWriter();
+				additionalMethod = w.toString();
+				
+				println(") {");
+				indent++;
+				print("return cast(");
+				node.getReturnType2().accept(this);
+				print(")(");
+				doRewrite = false;
+				node.getName().accept(this);
+				print("Impl");
+				doRewrite = true;
+				print("(");
+				printed = 0;
+				for (Object o : node.parameters()) {
+					if (printed > 0) {
+						print(", ");
+					}
+					SingleVariableDeclaration svd = (SingleVariableDeclaration)o;
+					print("cast(");
+					forceJavaObject = true;
+					svd.getType().accept(this);
+					forceJavaObject = false;
+					print(")");
+					print(fixKeywords(svd.getName().toString()));
+					printed++;
+				}
+				print(")");
+				println(");");
+				indent--;
+				println("}");
+			} else {
+				println(");");
+			}
 		} else {
 			if (constraints.length() > 0) {
 				println(")");
@@ -1277,6 +1421,8 @@ public class J2dVisitor extends ASTVisitor {
 			indent--;
 			println("}");
 		}
+		println(additionalMethod);
+		additionalMethod = "";
 	}
 
 	@Override
@@ -1492,6 +1638,8 @@ public class J2dVisitor extends ASTVisitor {
 	private String doRewrites(String s) {
 		if (inFieldAccess || (doRewrite && varRewrites.contains(s) && !locals.contains(s))) {
 			return "_" + s;
+		} else if (rewriteMethods && methodRewrites.contains(s)) {
+			return s + "Impl";
 		}
 		return s;
 	}
@@ -1506,6 +1654,11 @@ public class J2dVisitor extends ASTVisitor {
 	@Override
 	public boolean visit(SimpleType node) {
 		//System.out.println("Found: " + node.getClass() + " " + node);
+		if (forceJavaObject && node.resolveBinding().isTypeVariable()) {
+			print("JavaObject");
+			return false;
+		}
+		
 		Writer w = new StringWriter();
 		pushWriter(w);
 		node.getName().accept(this);
@@ -1866,6 +2019,15 @@ public class J2dVisitor extends ASTVisitor {
 				for (MethodDeclaration md : mds) {
 					if (md.getName().toString().equals(vdf.getName().toString())) {
 						varRewrites.add(vdf.getName().toString());
+					}
+				}
+			}
+		}
+		for (MethodDeclaration md : mds) {
+			if (md.typeParameters().size() > 0) {
+				for (MethodDeclaration md2 : mds) {
+					if (md2 != md && md2.getName().toString().equals(md.getName().toString())) {
+						methodRewrites.add(md.getName().toString());
 					}
 				}
 			}
