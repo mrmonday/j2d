@@ -1678,9 +1678,10 @@ public class J2dVisitor extends ASTVisitor {
 						print(".");
 						print(fixKeywords(cls));
 					} else {
-						String className = type.substring(idx + 1, type.indexOf('$'));
-						String fixedClassName = fixKeywords(className);
-						print(w.toString().replace(className + ".", fixedClassName + "." + fixedClassName + "."));
+						print(fixKeywords(w.toString()));
+						//String className = type.substring(idx + 1, type.indexOf('$'));
+						//String fixedClassName = fixKeywords(className);
+						//print(w.toString().replace(className + ".", fixedClassName + "." + fixedClassName + "."));
 					}
 				} else {
 					print(w.toString());
@@ -1695,6 +1696,9 @@ public class J2dVisitor extends ASTVisitor {
 		} else {
 			print(w.toString());
 		}
+		//if (node.resolveBinding().isRawType()) {
+		//	print("!(JavaObject)");
+		//}
 		return false;
 	}
 
@@ -2143,8 +2147,9 @@ public class J2dVisitor extends ASTVisitor {
 		//System.out.println("Found: " + node.getClass());
 		node.getName().accept(this);
 		if (node.typeBounds().size() == 1) {
-			print(" : ");
-			((Type)node.typeBounds().get(0)).accept(this);
+			// TODO re-add this.
+			//print(" : ");
+			//((Type)node.typeBounds().get(0)).accept(this);
 		} else if (node.typeBounds().size() > 1) {
 			StringWriter sw = new StringWriter();
 			pushWriter(sw);
