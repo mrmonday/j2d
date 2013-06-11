@@ -1698,8 +1698,18 @@ public class J2dVisitor extends ASTVisitor {
 			if (itb.isRawType() && node.getName() instanceof QualifiedName) {
 				QualifiedName qn = (QualifiedName)node.getName();
 				qn.getQualifier().accept(this);
-				// This doesn't matter really, as the static class is independent of the template
-				print("!(JavaObject).");
+				print("!(");
+				int printed = 0;
+				for (int i = 0; i < itb.getTypeDeclaration().getTypeParameters().length; i++) {
+					if (printed > 0) {
+						print(", ");
+					}
+					// The type doesn't matter really, as the static class
+					// is independent of the template
+					print("JavaObject");
+					printed++;
+				}
+				print(").");
 				qn.getName().accept(this);
 				return false;
 			}
