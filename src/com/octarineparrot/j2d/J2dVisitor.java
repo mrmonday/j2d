@@ -751,7 +751,9 @@ public class J2dVisitor extends ASTVisitor {
 		print("class ");
 		node.getName().accept(this);
 		// TODO implements
-		println(" : Enum {");
+		print(" : Enum!(");
+		node.getName().accept(this);
+		println(") {");
 		indent++;
 		for (Object o : node.enumConstants()) {
 			((EnumConstantDeclaration)o).accept(this);
