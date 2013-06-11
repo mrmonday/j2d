@@ -1048,6 +1048,8 @@ public class J2dVisitor extends ASTVisitor {
 
 		if (node.getOperator().equals(Operator.EQUALS)) {
 			op = " is ";
+		} else if (node.getOperator().equals(Operator.NOT_EQUALS)) {
+			op = " !is ";
 		}
 
 		if (node.getLeftOperand()
@@ -2165,7 +2167,9 @@ public class J2dVisitor extends ASTVisitor {
 			}
 			printed++;
 		} else {
-			if (!node.isInterface() && !node.getName().toString().equals("Object")) {
+			if (node.resolveBinding().getQualifiedName().equals("java.lang.Throwable")) {
+				print("Exception");
+			} else if (!node.isInterface() && !node.getName().toString().equals("Object")) {
 				print("JavaObject");
 				printed++;
 			}
