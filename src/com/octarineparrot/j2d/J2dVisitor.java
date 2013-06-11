@@ -262,6 +262,16 @@ public class J2dVisitor extends ASTVisitor {
 	 */
 	private boolean rewriteMethods = false;
 	
+	/**
+	 * Initializers for static fields
+	 */
+	private final Queue<String> staticFieldInitializers = new LinkedList<>();
+	
+	/**
+	 * Initializers for fields
+	 */
+	private final Queue<String> fieldInitializers = new LinkedList<>();
+	
 	public J2dVisitor(Path file, char[] source) {
 		nativeOutput = new StringWriter();
 		sourceCode = source;
@@ -816,7 +826,16 @@ public class J2dVisitor extends ASTVisitor {
 			}
 		}
 		println(";");
-		//node.get
+		if (staticFieldInitializers.size() > 0) {
+			println("shared static this() {");
+			indent++;
+			for (String s : staticFieldInitializers) {
+				println(s);
+			}
+			indent--;
+			println("}");
+			staticFieldInitializers.clear();
+		}
 		return false;
 	}
 
@@ -1359,6 +1378,9 @@ public class J2dVisitor extends ASTVisitor {
 				println(") {");
 			}
 			indent++;
+			if (node.isConstructor()) {
+				println("_j2d_intializeFields();");
+			}
 			if (isSynchronized(node)) {
 				println("synchronized (this) {");
 				indent++;
@@ -2214,6 +2236,23 @@ public class J2dVisitor extends ASTVisitor {
 
 	@Override
 	public void endVisit(TypeDeclaration node) {
+		if (fieldInitializers.size() > 0) {
+			println("private int _j2d_noCalls = 0;");
+			println("private void _j2d_intializeFields() {");
+			indent++;
+			println("// Make sure we don't overwrite fields when ctors call other ctors");
+			println("if (!_j2d_noCalls) {");
+			indent++;
+			for (String s : fieldInitializers) {
+				println(s);
+			}
+			indent--;
+			println("}");
+			println("_j2d_noCalls++;");
+			indent--;
+			println("}");
+			fieldInitializers.clear();
+		}
 		inTypes.pop();
 		indent--;
 		println("}");
@@ -2435,6 +2474,27 @@ public class J2dVisitor extends ASTVisitor {
 		print(w.toString());
 		Expression e = node.getInitializer();
 		if (e != null) {
+			if (node.getParent() instanceof FieldDeclaration) {
+				FieldDeclaration parent = (FieldDeclaration)node.getParent();
+				if (e instanceof NumberLiteral ||
+					e instanceof BooleanLiteral ||
+					e instanceof StringLiteral) {
+					;
+				} else {
+					String initializer = w.toString() + " = ";
+					w = new StringWriter();
+					pushWriter(w);
+					e.accept(this);
+					popWriter();
+					initializer += w.toString() + ";";
+					if (isStatic(parent)) {
+						staticFieldInitializers.add(initializer);
+					} else {
+						fieldInitializers.add(initializer);
+					}
+					return false;
+				}
+			}
 			print(" = ");
 			// TODO Things that can't be computed at compile time need
 			//      moving into a static ctor
