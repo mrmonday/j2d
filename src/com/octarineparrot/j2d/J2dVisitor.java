@@ -2206,10 +2206,17 @@ public class J2dVisitor extends ASTVisitor {
 			}
 			printed++;
 		} else {
-			if (node.resolveBinding().getQualifiedName().equals("java.lang.Throwable")) {
-				print("Exception");
-			}
-			if (!node.isInterface() && !node.getName().toString().equals("Object")) {
+			if (node.resolveBinding().getQualifiedName().equals("java.lang.Object")) {
+				// TODO This is a horrible hack, but unfortunately there's
+				//      no way around it due to D's lack of multiple inheritance
+				// How this looks:
+				//  class JavaObject : Exception {}
+				// What it should look like:
+				//  class JavaObject {}
+				//  class JavaThrowable : JavaObject, Throwable {}
+				print(": Exception");
+				printed++;
+			} else if (!node.isInterface()) {
 				print("JavaObject");
 				printed++;
 			}
