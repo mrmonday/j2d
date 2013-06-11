@@ -1684,8 +1684,25 @@ public class J2dVisitor extends ASTVisitor {
 		
 		if (node.resolveBinding().isRawType()) {
 			print("_j2d_I_");
-			node.getName().accept(this);
+			if (node.getName() instanceof QualifiedName) {
+				((QualifiedName)node.getName()).getName().accept(this);
+			} else {
+				node.getName().accept(this);
+			}
 			return false;
+		}
+		
+		if (isStatic(node.resolveBinding()) &&
+			node.resolveBinding().getDeclaringClass() != null) {
+			ITypeBinding itb = node.resolveBinding().getDeclaringClass();
+			if (itb.isRawType()) {
+				QualifiedName qn = (QualifiedName)node.getName();
+				qn.getQualifier().accept(this);
+				// This doesn't matter really, as the static class is independent of the template
+				print("!(JavaObject).");
+				qn.getName().accept(this);
+				return false;
+			}
 		}
 		
 		Writer w = new StringWriter();
@@ -2032,6 +2049,10 @@ public class J2dVisitor extends ASTVisitor {
 	}
 	
 	private boolean isStatic(BodyDeclaration node) {
+		return (node.getModifiers() & Modifier.STATIC) != 0;
+	}
+
+	private boolean isStatic(ITypeBinding node) {
 		return (node.getModifiers() & Modifier.STATIC) != 0;
 	}
 	
