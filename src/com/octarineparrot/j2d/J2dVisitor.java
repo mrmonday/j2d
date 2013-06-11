@@ -1247,6 +1247,20 @@ public class J2dVisitor extends ASTVisitor {
 		return false;
 	}
 	
+	private boolean hasNonStaticFields(ASTNode node) {
+		if (node instanceof TypeDeclaration) {
+			TypeDeclaration td = (TypeDeclaration)node;
+			for (FieldDeclaration fd : td.getFields()) {
+				if (!isStatic(fd)) {
+					return true;
+				}
+			}
+			return false;
+		}
+		// TODO is this correct for enums?
+		return false;
+	}
+	
 	@Override
 	public boolean visit(MethodDeclaration node) {
 		//System.out.println("Found: " + node.getClass());
@@ -1378,7 +1392,7 @@ public class J2dVisitor extends ASTVisitor {
 				println(") {");
 			}
 			indent++;
-			if (node.isConstructor()) {
+			if (node.isConstructor() && hasNonStaticFields(node.getParent())) {
 				println("_j2d_intializeFields();");
 			}
 			if (isSynchronized(node)) {
