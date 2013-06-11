@@ -1532,7 +1532,8 @@ public class J2dVisitor extends ASTVisitor {
 			// TODO package visibility
 			// NOTE If you change anything related to @... you should update the
 			// sorting thing to move UDAs to the start of modifier lists
-			if (node.getParent() instanceof FieldDeclaration && node.toString().equals("final")) {
+			if ((node.getParent() instanceof FieldDeclaration ||
+				 node.getParent() instanceof VariableDeclarationStatement) && node.toString().equals("final")) {
 				print("/*final*/ ");
 			} else if (node.toString().equals("transient")) {
 				// TODO This will probably change. Mostly there so it's greppable/doesn't compile
