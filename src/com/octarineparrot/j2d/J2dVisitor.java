@@ -157,6 +157,11 @@ public class J2dVisitor extends ASTVisitor {
 	final private Writer nativeOutput;
 	
 	/**
+	 * Generated interfaces for generic types
+	 */
+	final private Writer generatedInterfaces = new StringWriter();
+	
+	/**
 	 * Levels of indentation
 	 */
 	private int indent = 0;
@@ -636,6 +641,11 @@ public class J2dVisitor extends ASTVisitor {
 			println("/COMMENT");
 		}*/
 		return super.visit(node);
+	}
+	
+	@Override
+	public void endVisit(CompilationUnit node) {
+		println(generatedInterfaces.toString());
 	}
 
 	@Override
@@ -1474,7 +1484,7 @@ public class J2dVisitor extends ASTVisitor {
 			// NOTE If you change anything related to @... you should update the
 			// sorting thing to move UDAs to the start of modifier lists
 			if (node.getParent() instanceof FieldDeclaration && node.toString().equals("final")) {
-				print("immutable ");
+				print("/*final*/ ");
 			} else if (node.toString().equals("transient")) {
 				// TODO This will probably change. Mostly there so it's greppable/doesn't compile
 				print("@_j2d_transient ");
@@ -2062,10 +2072,16 @@ public class J2dVisitor extends ASTVisitor {
 		//System.out.println("Found: " + node.getClass());
 		
 		if (node.typeParameters().size() > 0) {
+			// TODO Remove once indentation with writers is fixed.
+			int oldIndent = indent;
+			pushWriter(generatedInterfaces);
+			indent = 0;
 			println("// Generated interface for wildcard types");
 			print("interface _j2d_I_");
 			node.getName().accept(this);
 			println(" {}");
+			indent = oldIndent;
+			popWriter();
 		}
 		
 		inTypes.push(node.resolveBinding().getBinaryName());
@@ -2318,7 +2334,8 @@ public class J2dVisitor extends ASTVisitor {
 			return true;
 		}
 		
-		if (node instanceof TypeDeclaration && node.getParent() instanceof CompilationUnit) {
+		if ((node instanceof EnumDeclaration || node instanceof TypeDeclaration) &&
+			 node.getParent() instanceof CompilationUnit) {
 			println("");
 			println("// Implicit imports");
 
