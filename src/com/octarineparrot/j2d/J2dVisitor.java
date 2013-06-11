@@ -1123,7 +1123,7 @@ public class J2dVisitor extends ASTVisitor {
 		node.getRightOperand().accept(this);
 		print(")(");
 		node.getLeftOperand().accept(this);
-		print(") != null)");
+		print(") !is null)");
 		return false;
 	}
 
