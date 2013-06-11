@@ -1520,6 +1520,9 @@ public class J2dVisitor extends ASTVisitor {
 			} else if (node.toString().equals("volatile")) {
 				// TODO Should this be shared?
 				print("@_j2d_volatile ");
+			} else if (node.toString().equals("static")) {
+				// Static is TLS in D
+				print("__gshared static ");
 			} else {
 				print(node.toString() + " ");
 			}
