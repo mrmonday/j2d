@@ -1247,12 +1247,20 @@ public class J2dVisitor extends ASTVisitor {
 		return false;
 	}
 	
-	private boolean hasNonStaticFields(ASTNode node) {
+	private boolean hasNonStaticFieldsWithInitializers(ASTNode node) {
 		if (node instanceof TypeDeclaration) {
 			TypeDeclaration td = (TypeDeclaration)node;
 			for (FieldDeclaration fd : td.getFields()) {
 				if (!isStatic(fd)) {
-					return true;
+					for (Object o : fd.fragments()) {
+						VariableDeclarationFragment vdf = (VariableDeclarationFragment)o;
+						if (vdf.getInitializer() != null &&
+							(vdf.getInitializer() instanceof BooleanLiteral ||
+							 vdf.getInitializer() instanceof NumberLiteral ||
+							 vdf.getInitializer() instanceof StringLiteral)) {
+							return true;
+						}
+					}
 				}
 			}
 			return false;
@@ -1392,7 +1400,7 @@ public class J2dVisitor extends ASTVisitor {
 				println(") {");
 			}
 			indent++;
-			if (node.isConstructor() && hasNonStaticFields(node.getParent())) {
+			if (node.isConstructor() && hasNonStaticFieldsWithInitializers(node.getParent())) {
 				println("_j2d_intializeFields();");
 			}
 			if (isSynchronized(node)) {
