@@ -1044,8 +1044,11 @@ public class J2dVisitor extends ASTVisitor {
 			print(")");
 		}
 		
-		// TODO == for non-primitive operands should become is
 		String op = " " + node.getOperator() + " ";
+
+		if (node.getOperator().equals(Operator.EQUALS)) {
+			op = " is ";
+		}
 
 		if (node.getLeftOperand()
 				.resolveTypeBinding()
