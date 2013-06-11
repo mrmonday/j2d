@@ -2078,6 +2078,7 @@ public class J2dVisitor extends ASTVisitor {
 			indent = 0;
 			println("// Generated interface for wildcard types");
 			print("interface _j2d_I_");
+			// TODO This won't work if there are two classes called X, needs fqn.
 			node.getName().accept(this);
 			println(" {}");
 			indent = oldIndent;
