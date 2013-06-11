@@ -1695,7 +1695,7 @@ public class J2dVisitor extends ASTVisitor {
 		if (isStatic(node.resolveBinding()) &&
 			node.resolveBinding().getDeclaringClass() != null) {
 			ITypeBinding itb = node.resolveBinding().getDeclaringClass();
-			if (itb.isRawType()) {
+			if (itb.isRawType() && node.getName() instanceof QualifiedName) {
 				QualifiedName qn = (QualifiedName)node.getName();
 				qn.getQualifier().accept(this);
 				// This doesn't matter really, as the static class is independent of the template
