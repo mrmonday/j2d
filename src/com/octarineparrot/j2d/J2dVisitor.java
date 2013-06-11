@@ -1539,6 +1539,17 @@ public class J2dVisitor extends ASTVisitor {
 	@Override
 	public boolean visit(ParameterizedType node) {
 		//System.out.println("Found: " + node.getClass());
+		boolean wildcard = false;
+		for (Object o : node.typeArguments()) {
+			if (o instanceof WildcardType) {
+				wildcard = true;
+			}
+		}
+		if (wildcard) {
+			print("_j2d_I_");
+			node.getType().accept(this);
+			return false;
+		}
 		node.getType().accept(this);
 		print("!(");
 		int printed = 0;
@@ -1656,6 +1667,12 @@ public class J2dVisitor extends ASTVisitor {
 		//System.out.println("Found: " + node.getClass() + " " + node);
 		if (forceJavaObject && node.resolveBinding().isTypeVariable()) {
 			print("JavaObject");
+			return false;
+		}
+		
+		if (node.resolveBinding().isRawType()) {
+			print("_j2d_I_");
+			node.getName().accept(this);
 			return false;
 		}
 		
@@ -2041,6 +2058,14 @@ public class J2dVisitor extends ASTVisitor {
 	@Override
 	public boolean visit(TypeDeclaration node) {
 		//System.out.println("Found: " + node.getClass());
+		
+		if (node.typeParameters().size() > 0) {
+			println("// Generated interface for wildcard types");
+			print("interface _j2d_I_");
+			node.getName().accept(this);
+			println(" {}");
+		}
+		
 		inTypes.push(node.resolveBinding().getBinaryName());
 		printModifiers(node);
 		
@@ -2071,11 +2096,13 @@ public class J2dVisitor extends ASTVisitor {
 			print(")");
 		}
 		
-		if ((!node.isInterface() || node.superInterfaceTypes().size() != 0) &&
-				!node.getName().toString().equals("Object")) {
+		if (node.typeParameters().size() > 0 ||
+			((!node.isInterface() || node.superInterfaceTypes().size() != 0) &&
+				!node.getName().toString().equals("Object"))) {
 			print(" : ");
 		}
 		
+		int printed = 0;
 		if (node.getSuperclassType() != null) {
 			if (node.getSuperclassType().toString().equals("Object")) {
 				print("JavaObject");
@@ -2083,22 +2110,30 @@ public class J2dVisitor extends ASTVisitor {
 				node.getSuperclassType().accept(this);
 				//print(node.getSuperclassType().toString());
 			}
+			printed++;
 		} else {
 			if (!node.isInterface() && !node.getName().toString().equals("Object")) {
 				print("JavaObject");
+				printed++;
 			}
 		}
 		
 		if (node.superInterfaceTypes().size() > 0) {
-			boolean doneOnce = false;
 			for (Object o : node.superInterfaceTypes()) {
-				if (doneOnce || !node.isInterface()) {
+				if (printed > 0 || !node.isInterface()) {
 					print(", ");
 				}
 				//print(o.toString());
 				((Type)o).accept(this);
-				doneOnce = true;
+				printed++;
 			}
+		}
+		if (node.typeParameters().size() > 0) {
+			if (printed > 0) {
+				print(", ");
+			}
+			print("_j2d_I_");
+			node.getName().accept(this);
 		}
 		if (constraints.length() > 0) {
 			println("");
@@ -2289,7 +2324,7 @@ public class J2dVisitor extends ASTVisitor {
 			println("import java.lang.all;");
 
 			// Current package is implicitly imported in java
-			if (packageName.length() != 0) {
+			if (packageName.length() != 0 && !packageName.equals("java.lang")) {
 				println("import " + packageName + ".all;");
 			} else {
 				// TODO implicit imports in default package
