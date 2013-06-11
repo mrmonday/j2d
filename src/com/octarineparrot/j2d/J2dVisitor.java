@@ -2169,7 +2169,8 @@ public class J2dVisitor extends ASTVisitor {
 		} else {
 			if (node.resolveBinding().getQualifiedName().equals("java.lang.Throwable")) {
 				print("Exception");
-			} else if (!node.isInterface() && !node.getName().toString().equals("Object")) {
+			}
+			if (!node.isInterface() && !node.getName().toString().equals("Object")) {
 				print("JavaObject");
 				printed++;
 			}
