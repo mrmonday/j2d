@@ -295,7 +295,10 @@ public class J2dVisitor extends ASTVisitor {
 	 */
 	private boolean inOverriddenMethod = false;
 	
-	private final Stack<TypeState> typeState = new Stack<>();
+	/**
+	 * Stack of TypeStates
+	 */
+	private final Stack<TypeState> typeStates = new Stack<>();
 	
 	public J2dVisitor(Path file, char[] source) {
 		nativeOutput = new StringWriter();
@@ -378,15 +381,15 @@ public class J2dVisitor extends ASTVisitor {
 	}
 	
 	private void pushTypeState(TypeState ts) {
-		typeState.add(ts);
+		typeStates.add(ts);
 	}
 	
 	private TypeState getTypeState() {
-		return typeState.peek();
+		return typeStates.peek();
 	}
 	
 	private void popTypeState() {
-		typeState.pop();
+		typeStates.pop();
 	}
 	
 	public static String fixKeywords(String str) {
@@ -802,6 +805,9 @@ public class J2dVisitor extends ASTVisitor {
          [ ; { ClassBodyDeclaration | ; } ]
          }
  */
+		if (!typeStates.isEmpty() && getTypeState().generateTemplate) {
+			return false;
+		}
 		// TODO finish enum stuff
 
 		pushTypeState(new TypeState());
@@ -850,6 +856,9 @@ public class J2dVisitor extends ASTVisitor {
 	@Override
 	public boolean visit(FieldDeclaration node) {
 		//System.out.println("Found: " + node.getClass());
+		if (hasStaticModifier(node) && getTypeState().generateTemplate) {
+			return false;
+		}
 		printModifiers(node);
 		doRewrite = false;
 		node.getType().accept(this);
@@ -1666,6 +1675,7 @@ public class J2dVisitor extends ASTVisitor {
 			// sorting thing to move UDAs to the start of modifier lists
 			if ((node.getParent() instanceof FieldDeclaration ||
 				 node.getParent() instanceof VariableDeclarationStatement) && node.toString().equals("final")) {
+				// TODO
 				print("/*final*/ ");
 			} else if (node.toString().equals("transient")) {
 				// TODO This will probably change. Mostly there so it's greppable/doesn't compile
@@ -1677,6 +1687,7 @@ public class J2dVisitor extends ASTVisitor {
 				print("@_j2d_volatile ");
 			} else if (node.toString().equals("static")) {
 				// Static is TLS in D
+				// TODO __gshared isn't necessary for TypeDecls
 				print("__gshared static ");
 			} else {
 				print(node.toString() + " ");
@@ -2484,7 +2495,11 @@ public class J2dVisitor extends ASTVisitor {
 
 	@Override
 	public boolean visit(TypeDeclaration node) {
+		if (!typeStates.isEmpty() && getTypeState().generateTemplate) {
+			return false;
+		}
 		pushTypeState(new TypeState());
+
 		//System.out.println("Found: " + node.getClass());
 		doTypeDecl(node, true);
 		postVisit(node);
