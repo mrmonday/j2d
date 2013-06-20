@@ -284,6 +284,11 @@ public class J2dVisitor extends ASTVisitor {
 	 */
 	private boolean callSuper = false;
 	
+	/**
+	 * Are we in a method that is overriding another?
+	 */
+	private boolean inOverriddenMethod = false;
+	
 	public J2dVisitor(Path file, char[] source) {
 		nativeOutput = new StringWriter();
 		sourceCode = source;
@@ -1188,7 +1193,9 @@ public class J2dVisitor extends ASTVisitor {
 		//System.out.println("Found: " + node.getClass());
 		String name = node.getTypeName().getFullyQualifiedName();
 		if (name.equals("Override")) {
-			print("override ");
+			if (inOverriddenMethod) {
+				print("override ");
+			}
 		} else if (name.equals("Deprecated")){
 			print("deprecated ");
 		} else {
@@ -1212,7 +1219,7 @@ public class J2dVisitor extends ASTVisitor {
 	}
 	
 	/**
-	 * Return all super interfaces and classes of a type
+	 * Return all super classes of a type
 	 * 
 	 * @param itb
 	 * @return
@@ -1296,7 +1303,10 @@ public class J2dVisitor extends ASTVisitor {
 			forceJavaObject = true;
 		}
 		
+		inOverriddenMethod = overridden;
 		printModifiers(node);
+		inMethod = false;
+		
 		boolean inInterface = node.getParent() instanceof TypeDeclaration &&
 							  ((TypeDeclaration)node.getParent()).isInterface();
 		if (callSuper &&
