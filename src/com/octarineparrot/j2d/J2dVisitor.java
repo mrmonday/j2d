@@ -38,9 +38,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.Stack;
@@ -271,6 +273,16 @@ public class J2dVisitor extends ASTVisitor {
 	 * Initializers for fields
 	 */
 	private final Queue<String> fieldInitializers = new LinkedList<>();
+	
+	/**
+	 * Replacement types for generics.
+	 */
+	private final Map<ITypeBinding, ITypeBinding> typeReplacements = new HashMap<>();
+	
+	/**
+	 * Should a MethodDeclaration just forward to super? Used for class Foo<T>{}
+	 */
+	private boolean callSuper = false;
 	
 	public J2dVisitor(Path file, char[] source) {
 		nativeOutput = new StringWriter();
@@ -1251,7 +1263,7 @@ public class J2dVisitor extends ASTVisitor {
 		if (node instanceof TypeDeclaration) {
 			TypeDeclaration td = (TypeDeclaration)node;
 			for (FieldDeclaration fd : td.getFields()) {
-				if (!isStatic(fd)) {
+				if (!hasStaticModifier(fd)) {
 					for (Object o : fd.fragments()) {
 						VariableDeclarationFragment vdf = (VariableDeclarationFragment)o;
 						if (vdf.getInitializer() != null &&
@@ -1272,6 +1284,11 @@ public class J2dVisitor extends ASTVisitor {
 	@Override
 	public boolean visit(MethodDeclaration node) {
 		//System.out.println("Found: " + node.getClass());
+
+		// Don't output method if private and subclassing.
+		if (callSuper && hasPrivateModifier(node)) {
+			return false;
+		}
 		
 		boolean overridden = isOverride(node);
 		//println(node.getName() + ": isOverride = " + overridden);
@@ -1280,6 +1297,14 @@ public class J2dVisitor extends ASTVisitor {
 		}
 		
 		printModifiers(node);
+		boolean inInterface = node.getParent() instanceof TypeDeclaration &&
+							  ((TypeDeclaration)node.getParent()).isInterface();
+		if (callSuper &&
+				!hasOverrideModifier(node) &&
+				!node.isConstructor() &&
+				!inInterface) {
+			print("override ");
+		}
 		if (node.isConstructor()) {
 			print("this(");
 		} else {
@@ -1332,7 +1357,7 @@ public class J2dVisitor extends ASTVisitor {
 			print(")(");
 		}
 		print(sw.toString());
-		if (node.getBody() == null && !isNative(node)) {
+		if (node.getBody() == null && !hasNativeModifier(node)) {
 			if (node.typeParameters().size() > 0 || methodRewrites.contains(node.getName().toString())) {
 				Writer w = new StringWriter();
 				pushWriter(w);
@@ -1403,13 +1428,13 @@ public class J2dVisitor extends ASTVisitor {
 			if (node.isConstructor() && hasNonStaticFieldsWithInitializers(node.getParent())) {
 				println("_j2d_intializeFields();");
 			}
-			if (isSynchronized(node)) {
+			if (hasSynchronizedModifier(node)) {
 				println("synchronized (this) {");
 				indent++;
 			}
 			// If the method is native, we delegate the functionality
 			// to a separate module
-			if (isNative(node)) {
+			if (hasNativeModifier(node)) {
 				IMethodBinding bindings = node.resolveBinding();
 				String cn = bindings.getDeclaringClass().getQualifiedName();
 				String[] pkgs = cn.split("\\.");
@@ -1419,7 +1444,7 @@ public class J2dVisitor extends ASTVisitor {
 				String fnFqn = fqn.replace(".", "_");
 				println("import " + pkg + ".native_methods;");
 				print("return " + fnFqn + "(");
-				if (isStatic(node)) {
+				if (hasStaticModifier(node)) {
 					print("this");
 					printed = 1;
 				} else {
@@ -1438,13 +1463,13 @@ public class J2dVisitor extends ASTVisitor {
 				int oldIndent = indent;
 				indent = 0;
 				println("");
-				if (!isStatic(node)) {
+				if (!hasStaticModifier(node)) {
 					println("import " + cn + ";");
 				}
 				node.getReturnType2().accept(this);
 				print(" " + fnFqn + "(");
 				printed = 0;
-				if (!isStatic(node)) {
+				if (!hasStaticModifier(node)) {
 					print(cn + " _this");
 					printed++;
 				}
@@ -1463,8 +1488,37 @@ public class J2dVisitor extends ASTVisitor {
 				indent = oldIndent;
 				popWriter();
 			} else {
-				inMethod = true;
-				node.getBody().accept(this);
+				if (callSuper) {
+					if (node.isConstructor()) {
+						print("super(");
+					} else {
+						print("return cast(");
+						node.getReturnType2().accept(this);
+						print(")super.");
+						doRewrite = false;
+						//rewriteMethods = node.typeParameters().size() == 0;
+						node.getName().accept(this);
+						if (forceJavaObject) {
+							print("Impl");
+						}
+						//rewriteMethods = false;
+						doRewrite = true;
+						print("(");
+					}
+					printed = 0;
+					for (Object o : node.parameters()) {
+						if (printed > 0) {
+							print(", ");
+						}
+						SingleVariableDeclaration svd = (SingleVariableDeclaration)o;
+						print(fixKeywords(svd.getName().toString()));
+						printed++;
+					}
+					println(");");
+				} else {
+					inMethod = true;
+					node.getBody().accept(this);
+				}
 			}
 		}
 		return false;
@@ -1472,10 +1526,14 @@ public class J2dVisitor extends ASTVisitor {
 	
 	@Override
 	public void endVisit(MethodDeclaration node) {
+		// Don't output method if private and subclassing.
+		if (callSuper && hasPrivateModifier(node)) {
+			return;
+		}
 		inMethod = false;
 		locals.clear();
-		if (node.getBody() != null || isNative(node)) {
-			if (isSynchronized(node)) {
+		if (node.getBody() != null || hasNativeModifier(node)) {
+			if (hasSynchronizedModifier(node)) {
 				indent--;
 				println("}");
 			}
@@ -1485,13 +1543,55 @@ public class J2dVisitor extends ASTVisitor {
 		println(additionalMethod);
 		additionalMethod = "";
 	}
+	
+	/**
+	 * Return the ITypeBinding which contains the method, or null if no
+	 * cast is required.
+	 * 
+	 * @param itb
+	 * @param method
+	 * @return
+	 */
+	private ITypeBinding findMethod(ITypeBinding itb, SimpleName method) {
+		if (typeReplacements.containsKey(itb)) {
+			ITypeBinding currentType = typeReplacements.get(itb);
+			// currentType == null for JavaObject
+			if (currentType == null) {
+				return null;
+			}
+			// No cast needed if it's in the current type.
+			for (IMethodBinding imb : currentType.getDeclaredMethods()) {
+				if (imb.getName().equals(method.toString())) {
+					return null;
+				}
+			}
+			for (ITypeBinding binding : itb.getTypeBounds()) {
+				if (binding != currentType) {
+					for (IMethodBinding imb : binding.getDeclaredMethods()) {
+						if (imb.getName().equals(method.toString())) {
+							return binding;
+						}
+					}
+				}
+			}
+		}
+		return null;
+	}
 
 	@Override
 	public boolean visit(MethodInvocation node) {
 		//System.out.println("Found: " + node.getClass());
 		if (node.getExpression() != null) {
-			node.getExpression().accept(this);
-			print(".");
+			ITypeBinding exprType = node.getExpression().resolveTypeBinding();
+			ITypeBinding itb = findMethod(exprType, node.getName());
+			if (itb == null) {
+				node.getExpression().accept(this);
+				print(".");
+			} else {
+				print("(cast(");
+				print(fixKeywords(itb.getName()));
+				print(")).");
+			}
 		}
 		node.getName().accept(this);
 		print("(");
@@ -1610,12 +1710,14 @@ public class J2dVisitor extends ASTVisitor {
 				wildcard = true;
 			}
 		}
-		if (wildcard) {
-			print("_j2d_I_");
-			node.getType().accept(this);
+		if (wildcard || typeReplacements.size() > 0) {
+			print("_j2d_T_");
+			print(fixKeywords(node.getType().toString()));
+			//node.getType().accept(this);
 			return false;
 		}
-		node.getType().accept(this);
+		//node.getType().accept(this);
+		print(fixKeywords(node.getType().toString()));
 		print("!(");
 		int printed = 0;
 		
@@ -1731,28 +1833,43 @@ public class J2dVisitor extends ASTVisitor {
 		print(fixKeywords(doRewrites(node.toString())));
 		return super.visit(node);
 	}
+	
+	private boolean hasWildcardTypeArguments(ITypeBinding binding) {
+		if (binding.isParameterizedType()) {
+			for (ITypeBinding itb : binding.getTypeArguments()) {
+				if (itb.isWildcardType()) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
 
 	@Override
 	public boolean visit(SimpleType node) {
-		//System.out.println("Found: " + node.getClass() + " " + node);
-		if (forceJavaObject && node.resolveBinding().isTypeVariable()) {
-			print("JavaObject");
-			return false;
+		ITypeBinding binding = node.resolveBinding();
+		if (typeReplacements.containsKey(binding)) {
+			binding = typeReplacements.get(binding);
+			if (binding == null) {
+				print("JavaObject");
+				return false;
+			}
 		}
 		
-		if (node.resolveBinding().isRawType()) {
-			print("_j2d_I_");
-			if (node.getName() instanceof QualifiedName) {
+		if (binding.isRawType() || hasWildcardTypeArguments(binding) || hasTypeVariableArgument(binding)) {
+			print("_j2d_T_" + fixKeywords(binding.getErasure().getName()));
+			/*if (node.getName() instanceof QualifiedName) {
 				((QualifiedName)node.getName()).getName().accept(this);
 			} else {
 				node.getName().accept(this);
-			}
+			}*/
 			return false;
 		}
 		
-		if (isStatic(node.resolveBinding()) &&
-			node.resolveBinding().getDeclaringClass() != null) {
-			ITypeBinding itb = node.resolveBinding().getDeclaringClass();
+		if (hasStaticModifier(binding) &&
+			binding.getDeclaringClass() != null) {
+			ITypeBinding itb = binding.getDeclaringClass();
+			// TODO this won't work for T extends Foobar
 			if (itb.isRawType() && node.getName() instanceof QualifiedName) {
 				QualifiedName qn = (QualifiedName)node.getName();
 				qn.getQualifier().accept(this);
@@ -1775,11 +1892,13 @@ public class J2dVisitor extends ASTVisitor {
 		
 		Writer w = new StringWriter();
 		pushWriter(w);
-		node.getName().accept(this);
+		print(fixKeywords(binding.getName()));
+		//node.getName().accept(this);
 		popWriter();
 
-		String type = node.resolveBinding().getBinaryName();
+		String type = binding.getBinaryName();
 
+		// TODO This won't work for T extends Foobar
 		if (node.getName() instanceof QualifiedName) {
 			QualifiedName qn = (QualifiedName) node.getName();
 
@@ -2108,20 +2227,36 @@ public class J2dVisitor extends ASTVisitor {
 		}
 	}
 	
-	private boolean isSynchronized(BodyDeclaration node) {
+	private boolean hasSynchronizedModifier(BodyDeclaration node) {
 		return (node.getModifiers() & Modifier.SYNCHRONIZED) != 0;
 	}
 	
-	private boolean isNative(BodyDeclaration node) {
+	private boolean hasNativeModifier(BodyDeclaration node) {
 		return (node.getModifiers() & Modifier.NATIVE) != 0;
 	}
 	
-	private boolean isStatic(BodyDeclaration node) {
+	private boolean hasStaticModifier(BodyDeclaration node) {
 		return (node.getModifiers() & Modifier.STATIC) != 0;
 	}
 
-	private boolean isStatic(ITypeBinding node) {
+	private boolean hasStaticModifier(ITypeBinding node) {
 		return (node.getModifiers() & Modifier.STATIC) != 0;
+	}
+	
+	private boolean hasPrivateModifier(BodyDeclaration node) {
+		return (node.getModifiers() & Modifier.PRIVATE) != 0;
+	}
+	
+	private boolean hasOverrideModifier(BodyDeclaration node) {
+		for (Object o : node.modifiers()) {
+			if (o instanceof MarkerAnnotation) {
+				MarkerAnnotation ma = (MarkerAnnotation)o;
+				if (ma.getTypeName().getFullyQualifiedName().equals("Override")) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 	
 	/**
@@ -2155,37 +2290,73 @@ public class J2dVisitor extends ASTVisitor {
 			}
 		}
 	}
-
-	@Override
-	public boolean visit(TypeDeclaration node) {
-		//System.out.println("Found: " + node.getClass());
-		
-		if (node.typeParameters().size() > 0) {
-			// TODO Remove once indentation with writers is fixed.
-			int oldIndent = indent;
-			pushWriter(generatedInterfaces);
-			indent = 0;
-			println("// Generated interface for wildcard types");
-			print("interface _j2d_I_");
-			// TODO This won't work if there are two classes called X, needs fqn.
-			node.getName().accept(this);
-			println(" {}");
-			indent = oldIndent;
-			popWriter();
+	
+	private boolean hasTypeVariableArgument(ITypeBinding binding) {
+		for (ITypeBinding itb : binding.getTypeArguments()) {
+			if (itb.isTypeVariable()) {
+				return true;
+			}
 		}
-		
+		return false;
+	}
+	
+	/**
+	 * Initialise the replacements for this type
+	 * 
+	 * For example:
+	 *  T -> JavaObject
+	 *  U extends Foo -> Foo
+	 *  V extends U -> Foo
+	 *  X extends Foo<K> -> Foo<K>
+	 *  Y extends Foo<Y> -> _j2d_Foo
+	 * @param node
+	 */
+	private void initializeReplacements(TypeDeclaration node) {
+		for (Object o : node.typeParameters()) {
+			TypeParameter t = (TypeParameter)o;
+			if (t.typeBounds().size() == 0) {
+				typeReplacements.put(t.resolveBinding(), null);
+			} else {
+				// TODO This won't work for U extends T, T extends IFoobar
+				// The first type in the list is the class, if any
+				Type firstType = (Type)t.typeBounds().get(0);
+				ITypeBinding itb = firstType.resolveBinding();
+				while (itb.isTypeVariable()) {
+					itb = itb.getSuperclass();
+				}
+				/*if (itb.isParameterizedType() && hasTypeVariableArgument(itb)) {
+					itb = itb.getErasure();
+				}*/
+				typeReplacements.put(t.resolveBinding(), itb);
+			}
+		}
+	}
+	
+	private void clearReplacements() {
+		typeReplacements.clear();
+	}
+	
+	private void doTypeDecl(TypeDeclaration node, boolean lowerGenerics) {
 		inTypes.push(node.resolveBinding().getBinaryName());
 		printModifiers(node);
 		
+		if (lowerGenerics) {
+			initializeReplacements(node);
+		}
+		
 		if (node.isInterface()) {
 			print("interface ");
-			node.getName().accept(this);
 		} else {
 			print("class ");
-			node.getName().accept(this);
+			
 		}
+		if (lowerGenerics && node.typeParameters().size() > 0) {
+			print("_j2d_T_");
+		}
+		// TODO This won't work if there are two classes called X, needs fqn.
+		node.getName().accept(this);
 
-		if (node.typeParameters().size() > 0) {
+		if (!lowerGenerics && node.typeParameters().size() > 0) {
 			print("(");
 			int printed = 0;
 			for (Object o : node.typeParameters()) {
@@ -2204,7 +2375,7 @@ public class J2dVisitor extends ASTVisitor {
 			print(")");
 		}
 		
-		if (node.typeParameters().size() > 0 ||
+		if ((!lowerGenerics && node.typeParameters().size() > 0) ||
 			((!node.isInterface() || node.superInterfaceTypes().size() != 0) &&
 				!node.getName().toString().equals("Object"))) {
 			print(" : ");
@@ -2230,7 +2401,7 @@ public class J2dVisitor extends ASTVisitor {
 				//  class JavaThrowable : JavaObject, Throwable {}
 				print(": Exception");
 				printed++;
-			} else if (!node.isInterface()) {
+			} else if (!node.isInterface() && lowerGenerics) {
 				print("JavaObject");
 				printed++;
 			}
@@ -2238,7 +2409,7 @@ public class J2dVisitor extends ASTVisitor {
 		
 		if (node.superInterfaceTypes().size() > 0) {
 			for (Object o : node.superInterfaceTypes()) {
-				if (printed > 0 || !node.isInterface()) {
+				if (printed > 0) {
 					print(", ");
 				}
 				//print(o.toString());
@@ -2246,11 +2417,11 @@ public class J2dVisitor extends ASTVisitor {
 				printed++;
 			}
 		}
-		if (node.typeParameters().size() > 0) {
+		if (!lowerGenerics && node.typeParameters().size() > 0) {
 			if (printed > 0) {
 				print(", ");
 			}
-			print("_j2d_I_");
+			print("_j2d_T_");
 			node.getName().accept(this);
 		}
 		if (constraints.length() > 0) {
@@ -2266,14 +2437,47 @@ public class J2dVisitor extends ASTVisitor {
 		fixNames(node);
 		
 		for(Object o : node.bodyDeclarations()) {
+			if (!lowerGenerics) {
+				callSuper = true;
+			}
 			((BodyDeclaration)o).accept(this);
-			println("");
+			if (!lowerGenerics) {
+				callSuper = false;
+			}
+			//println("");
 		}
-		return false;
+		
+		if (lowerGenerics) {
+			clearReplacements();
+		}
 	}
 
 	@Override
-	public void endVisit(TypeDeclaration node) {
+	public boolean visit(TypeDeclaration node) {
+		//System.out.println("Found: " + node.getClass());
+		doTypeDecl(node, true);
+		postVisit(node);
+		if (node.typeParameters().size() > 0) {
+			println("");
+			doTypeDecl(node, false);
+			postVisit(node);
+			// TODO Remove once indentation with writers is fixed.
+			/*int oldIndent = indent;
+			pushWriter(generatedInterfaces);
+			indent = 0;
+			println("// Generated interface for wildcard types");
+			print("interface _j2d_I_");
+			// TODO This won't work if there are two classes called X, needs fqn.
+			node.getName().accept(this);
+			println(" {}");
+			indent = oldIndent;
+			popWriter();*/
+		}
+
+		return false;
+	}
+	
+	private void postVisit(TypeDeclaration node) {
 		if (fieldInitializers.size() > 0) {
 			println("private int _j2d_noCalls = 0;");
 			println("private void _j2d_intializeFields() {");
@@ -2294,6 +2498,11 @@ public class J2dVisitor extends ASTVisitor {
 		inTypes.pop();
 		indent--;
 		println("}");
+	}
+
+	@Override
+	public void endVisit(TypeDeclaration node) {
+
 	}
 	@Override
 	public boolean visit(TypeDeclarationStatement node) {
@@ -2317,9 +2526,8 @@ public class J2dVisitor extends ASTVisitor {
 		//System.out.println("Found: " + node.getClass());
 		node.getName().accept(this);
 		if (node.typeBounds().size() == 1) {
-			// TODO re-add this.
-			//print(" : ");
-			//((Type)node.typeBounds().get(0)).accept(this);
+			print(" : ");
+			((Type)node.typeBounds().get(0)).accept(this);
 		} else if (node.typeBounds().size() > 1) {
 			StringWriter sw = new StringWriter();
 			pushWriter(sw);
@@ -2525,7 +2733,7 @@ public class J2dVisitor extends ASTVisitor {
 					e.accept(this);
 					popWriter();
 					initializer += w.toString() + ";";
-					if (isStatic(parent)) {
+					if (hasStaticModifier(parent)) {
 						staticFieldInitializers.add(initializer);
 					} else {
 						fieldInitializers.add(initializer);
