@@ -147,9 +147,14 @@ import org.eclipse.jdt.core.dom.WildcardType;
 public class J2dVisitor extends ASTVisitor {
 	private class TypeState {
 		/**
-		 * Should a MethodDeclaration just forward to super? Used for class Foo<T>{}
+		 * Are we generating the templated version of a generic class?
+		 * 
+		 * This implies:
+		 *  - MethodDeclarations should forward to its super method
+		 *  - static variables should not be output
+		 *  - inner classes/interfaces/structs should not be output
 		 */
-		private boolean callSuper = false;
+		private boolean generateTemplate = false;
 		
 		/**
 		 * Replacement types for generics.
@@ -1310,7 +1315,7 @@ public class J2dVisitor extends ASTVisitor {
 		//System.out.println("Found: " + node.getClass());
 
 		// Don't output method if private and subclassing.
-		if (getTypeState().callSuper && hasPrivateModifier(node)) {
+		if (getTypeState().generateTemplate && hasPrivateModifier(node)) {
 			return false;
 		}
 		
@@ -1326,7 +1331,7 @@ public class J2dVisitor extends ASTVisitor {
 		
 		boolean inInterface = node.getParent() instanceof TypeDeclaration &&
 							  ((TypeDeclaration)node.getParent()).isInterface();
-		if (getTypeState().callSuper &&
+		if (getTypeState().generateTemplate &&
 				!hasOverrideModifier(node) &&
 				!node.isConstructor() &&
 				!inInterface) {
@@ -1515,7 +1520,7 @@ public class J2dVisitor extends ASTVisitor {
 				indent = oldIndent;
 				popWriter();
 			} else {
-				if (getTypeState().callSuper) {
+				if (getTypeState().generateTemplate) {
 					if (node.isConstructor()) {
 						print("super(");
 					} else {
@@ -1554,7 +1559,7 @@ public class J2dVisitor extends ASTVisitor {
 	@Override
 	public void endVisit(MethodDeclaration node) {
 		// Don't output method if private and subclassing.
-		if (getTypeState().callSuper && hasPrivateModifier(node)) {
+		if (getTypeState().generateTemplate && hasPrivateModifier(node)) {
 			return;
 		}
 		inMethod = false;
@@ -2464,13 +2469,13 @@ public class J2dVisitor extends ASTVisitor {
 		fixNames(node);
 		
 		if (!lowerGenerics) {
-			getTypeState().callSuper = true;
+			getTypeState().generateTemplate = true;
 		}
 		for(Object o : node.bodyDeclarations()) {
 			((BodyDeclaration)o).accept(this);
 		}
 		if (!lowerGenerics) {
-			getTypeState().callSuper = false;
+			getTypeState().generateTemplate = false;
 		}
 		if (lowerGenerics) {
 			clearReplacements();
