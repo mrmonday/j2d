@@ -145,6 +145,17 @@ import org.eclipse.jdt.core.dom.WhileStatement;
 import org.eclipse.jdt.core.dom.WildcardType;
 
 public class J2dVisitor extends ASTVisitor {
+	private class TypeState {
+		/**
+		 * Should a MethodDeclaration just forward to super? Used for class Foo<T>{}
+		 */
+		private boolean callSuper = false;
+		
+		/**
+		 * Replacement types for generics.
+		 */
+		private final Map<ITypeBinding, ITypeBinding> typeReplacements = new HashMap<>();
+	}
 	
 	/**
 	 * Stack of writers for output
@@ -275,19 +286,11 @@ public class J2dVisitor extends ASTVisitor {
 	private final Queue<String> fieldInitializers = new LinkedList<>();
 	
 	/**
-	 * Replacement types for generics.
-	 */
-	private final Map<ITypeBinding, ITypeBinding> typeReplacements = new HashMap<>();
-	
-	/**
-	 * Should a MethodDeclaration just forward to super? Used for class Foo<T>{}
-	 */
-	private boolean callSuper = false;
-	
-	/**
 	 * Are we in a method that is overriding another?
 	 */
 	private boolean inOverriddenMethod = false;
+	
+	private final Stack<TypeState> typeState = new Stack<>();
 	
 	public J2dVisitor(Path file, char[] source) {
 		nativeOutput = new StringWriter();
@@ -367,6 +370,18 @@ public class J2dVisitor extends ASTVisitor {
 	private void println(String str) {
 		print(str + "\n");
 		shouldIndent = true;
+	}
+	
+	private void pushTypeState(TypeState ts) {
+		typeState.add(ts);
+	}
+	
+	private TypeState getTypeState() {
+		return typeState.peek();
+	}
+	
+	private void popTypeState() {
+		typeState.pop();
 	}
 	
 	public static String fixKeywords(String str) {
@@ -784,6 +799,7 @@ public class J2dVisitor extends ASTVisitor {
  */
 		// TODO finish enum stuff
 
+		pushTypeState(new TypeState());
 		printModifiers(node);
 		print("class ");
 		node.getName().accept(this);
@@ -800,6 +816,7 @@ public class J2dVisitor extends ASTVisitor {
 		}
 		indent--;
 		println("}");
+		popTypeState();
 		return false;
 	}
 
@@ -1293,7 +1310,7 @@ public class J2dVisitor extends ASTVisitor {
 		//System.out.println("Found: " + node.getClass());
 
 		// Don't output method if private and subclassing.
-		if (callSuper && hasPrivateModifier(node)) {
+		if (getTypeState().callSuper && hasPrivateModifier(node)) {
 			return false;
 		}
 		
@@ -1309,7 +1326,7 @@ public class J2dVisitor extends ASTVisitor {
 		
 		boolean inInterface = node.getParent() instanceof TypeDeclaration &&
 							  ((TypeDeclaration)node.getParent()).isInterface();
-		if (callSuper &&
+		if (getTypeState().callSuper &&
 				!hasOverrideModifier(node) &&
 				!node.isConstructor() &&
 				!inInterface) {
@@ -1498,7 +1515,7 @@ public class J2dVisitor extends ASTVisitor {
 				indent = oldIndent;
 				popWriter();
 			} else {
-				if (callSuper) {
+				if (getTypeState().callSuper) {
 					if (node.isConstructor()) {
 						print("super(");
 					} else {
@@ -1537,7 +1554,7 @@ public class J2dVisitor extends ASTVisitor {
 	@Override
 	public void endVisit(MethodDeclaration node) {
 		// Don't output method if private and subclassing.
-		if (callSuper && hasPrivateModifier(node)) {
+		if (getTypeState().callSuper && hasPrivateModifier(node)) {
 			return;
 		}
 		inMethod = false;
@@ -1563,8 +1580,8 @@ public class J2dVisitor extends ASTVisitor {
 	 * @return
 	 */
 	private ITypeBinding findMethod(ITypeBinding itb, SimpleName method) {
-		if (typeReplacements.containsKey(itb)) {
-			ITypeBinding currentType = typeReplacements.get(itb);
+		if (getTypeState().typeReplacements.containsKey(itb)) {
+			ITypeBinding currentType = getTypeState().typeReplacements.get(itb);
 			// currentType == null for JavaObject
 			if (currentType == null) {
 				return null;
@@ -1720,7 +1737,7 @@ public class J2dVisitor extends ASTVisitor {
 				wildcard = true;
 			}
 		}
-		if (wildcard || typeReplacements.size() > 0) {
+		if (wildcard || getTypeState().typeReplacements.size() > 0) {
 			print("_j2d_T_");
 			print(fixKeywords(node.getType().toString()));
 			//node.getType().accept(this);
@@ -1858,8 +1875,8 @@ public class J2dVisitor extends ASTVisitor {
 	@Override
 	public boolean visit(SimpleType node) {
 		ITypeBinding binding = node.resolveBinding();
-		if (typeReplacements.containsKey(binding)) {
-			binding = typeReplacements.get(binding);
+		if (getTypeState().typeReplacements.containsKey(binding)) {
+			binding = getTypeState().typeReplacements.get(binding);
 			if (binding == null) {
 				print("JavaObject");
 				return false;
@@ -2325,7 +2342,7 @@ public class J2dVisitor extends ASTVisitor {
 		for (Object o : node.typeParameters()) {
 			TypeParameter t = (TypeParameter)o;
 			if (t.typeBounds().size() == 0) {
-				typeReplacements.put(t.resolveBinding(), null);
+				getTypeState().typeReplacements.put(t.resolveBinding(), null);
 			} else {
 				// TODO This won't work for U extends T, T extends IFoobar
 				// The first type in the list is the class, if any
@@ -2337,13 +2354,13 @@ public class J2dVisitor extends ASTVisitor {
 				/*if (itb.isParameterizedType() && hasTypeVariableArgument(itb)) {
 					itb = itb.getErasure();
 				}*/
-				typeReplacements.put(t.resolveBinding(), itb);
+				getTypeState().typeReplacements.put(t.resolveBinding(), itb);
 			}
 		}
 	}
 	
 	private void clearReplacements() {
-		typeReplacements.clear();
+		getTypeState().typeReplacements.clear();
 	}
 	
 	private void doTypeDecl(TypeDeclaration node, boolean lowerGenerics) {
@@ -2446,17 +2463,15 @@ public class J2dVisitor extends ASTVisitor {
 		
 		fixNames(node);
 		
-		for(Object o : node.bodyDeclarations()) {
-			if (!lowerGenerics) {
-				callSuper = true;
-			}
-			((BodyDeclaration)o).accept(this);
-			if (!lowerGenerics) {
-				callSuper = false;
-			}
-			//println("");
+		if (!lowerGenerics) {
+			getTypeState().callSuper = true;
 		}
-		
+		for(Object o : node.bodyDeclarations()) {
+			((BodyDeclaration)o).accept(this);
+		}
+		if (!lowerGenerics) {
+			getTypeState().callSuper = false;
+		}
 		if (lowerGenerics) {
 			clearReplacements();
 		}
@@ -2464,6 +2479,7 @@ public class J2dVisitor extends ASTVisitor {
 
 	@Override
 	public boolean visit(TypeDeclaration node) {
+		pushTypeState(new TypeState());
 		//System.out.println("Found: " + node.getClass());
 		doTypeDecl(node, true);
 		postVisit(node);
@@ -2483,7 +2499,7 @@ public class J2dVisitor extends ASTVisitor {
 			indent = oldIndent;
 			popWriter();*/
 		}
-
+		popTypeState();
 		return false;
 	}
 	
