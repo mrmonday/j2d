@@ -1846,8 +1846,10 @@ public class J2dVisitor extends ASTVisitor {
 
 	@Override
 	public boolean visit(QualifiedType node) {
-		System.out.println("Found: " + node.getClass());
-		return super.visit(node);
+		node.getQualifier().accept(this);
+		print(".");
+		node.getName().accept(this);
+		return false;
 	}
 
 	@Override
