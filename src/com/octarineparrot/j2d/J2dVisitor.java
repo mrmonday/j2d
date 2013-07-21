@@ -1872,9 +1872,57 @@ public class J2dVisitor extends ASTVisitor {
 		return s;
 	}
 
+	/**
+	 * Does the given binding need generic context?
+	 *
+	 * Any non-static inner class of a generic requires
+	 * access to the generic type (unless it is enclosed in a
+	 * non-generic static class).
+	 * ----
+	 * class Outer<T> {
+	 *   class Inner {
+	 *   }
+	 * }
+	 * Outer.Inner inner;          // needsGenericContext() == true
+	 * Outer<?>.Inner inner2;      // needsGenericContext() == true
+	 * Outer<String>.Inner inner3; // needsGenericContext() == false
+	 * ----
+	 *
+	 * @param ib
+	 * @return
+	 */
+	private boolean needsGenericContext(IBinding ib) {
+		if (ib instanceof ITypeBinding) {
+			ITypeBinding itb = (ITypeBinding)ib;
+			if (!hasStaticModifier(itb)) {
+				for (ITypeBinding declaring = itb.getDeclaringClass();
+						declaring != null;
+						declaring = declaring.getDeclaringClass()) {
+
+					if (declaring.isParameterizedType()) {
+						for (ITypeBinding arg : declaring.getTypeArguments()) {
+							if (arg.isWildcardType()) {
+								return true;
+							}
+						}
+						return false;
+					}
+
+					if (hasStaticModifier(declaring)) {
+						return false;
+					}
+				}
+			}
+		}
+		return false;
+	}
+
 	@Override
 	public boolean visit(SimpleName node) {
 		//System.out.println("Found: " + node.getClass() + " " + node);
+		if (needsGenericContext(node.resolveBinding())) {
+			print("_j2d_T_");
+		}
 		print(fixKeywords(doRewrites(node.toString())));
 		return super.visit(node);
 	}
@@ -1902,6 +1950,23 @@ public class J2dVisitor extends ASTVisitor {
 		}
 		
 		if (binding.isRawType() || hasWildcardTypeArguments(binding) || hasTypeVariableArgument(binding)) {
+			final Queue<ITypeBinding> declarings = new LinkedList<>();
+			for (ITypeBinding declaring = binding.getDeclaringClass();
+					declaring != null;
+					declaring = declaring.getDeclaringClass()) {
+				declarings.add(declaring);
+			}
+			ITypeBinding declaring;
+			while ((declaring = declarings.poll()) != null) {
+				// TODO This name needs most of the logic from this method applying to it,
+				//      need to factor it out - currently only a hack for raw types, needs
+				//      doing properly
+				if (declaring.isRawType()) {
+					print("_j2d_T_");
+				}
+				print(fixKeywords(declaring.getName()));
+				print(".");
+			}
 			print("_j2d_T_" + fixKeywords(binding.getErasure().getName()));
 			/*if (node.getName() instanceof QualifiedName) {
 				((QualifiedName)node.getName()).getName().accept(this);
